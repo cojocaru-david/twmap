@@ -4,6 +4,7 @@ export interface Config {
     mode: 'hash' | 'incremental' | 'readable';
     prefix: string;
     ignore: string[];
+    cssCompressor?: boolean;
 }
 export interface ClassMapping {
     original: string;

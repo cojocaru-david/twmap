@@ -43,7 +43,8 @@ function loadConfig(configPath) {
         output: './twmap.css',
         mode: 'hash',
         prefix: 'tw-',
-        ignore: ['node_modules/**', 'dist/**', 'build/**']
+        ignore: ['node_modules/**', 'dist/**', 'build/**'],
+        cssCompressor: false
     };
     if (!configPath) {
         configPath = path.join(process.cwd(), 'twmap.config.js');
@@ -60,7 +61,7 @@ function loadConfig(configPath) {
             ...userConfig
         };
     }
-    catch (error) {
+    catch (_error) {
         console.warn(`Warning: Could not load config file ${configPath}. Using defaults.`);
         return defaultConfig;
     }

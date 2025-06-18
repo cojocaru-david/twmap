@@ -39,6 +39,21 @@ const config_1 = require("./config");
 const processor_1 = require("./processor");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const Sentry = __importStar(require("@sentry/node"));
+const dotenv = __importStar(require("dotenv"));
+dotenv.config();
+const SENTRY_DSN = process.env.SENTRY_DSN;
+if (SENTRY_DSN) {
+    Sentry.init({
+        dsn: SENTRY_DSN,
+        sendDefaultPii: true,
+        tracesSampleRate: 1.0,
+        _experiments: { enableLogs: true },
+    });
+}
+else {
+    console.warn('Sentry DSN not set. Sentry will not report errors.');
+}
 async function main() {
     commander_1.program
         .name('twmap')
@@ -60,7 +75,7 @@ async function main() {
     }
     try {
         // Load configuration
-        let config = (0, config_1.loadConfig)(options.config);
+        const config = (0, config_1.loadConfig)(options.config);
         // Override config with CLI options
         if (options.input)
             config.input = options.input;
@@ -86,6 +101,10 @@ async function main() {
         await processor.process();
     }
     catch (error) {
+        if (SENTRY_DSN)
+            Sentry.captureException(error);
+        if (SENTRY_DSN)
+            Sentry.captureMessage('❌ Error:', { extra: { error: error instanceof Error ? error.message : error } });
         console.error('❌ Error:', error instanceof Error ? error.message : error);
         process.exit(1);
     }
@@ -101,6 +120,10 @@ function createSampleConfig() {
   input: [
     './src/**/*.{tsx,jsx,html}',
     './components/**/*.{tsx,jsx}',
+    './examples/**/*.{tsx,jsx,html}',
+    './app/**/*.{tsx,jsx,html}',
+    './pages/**/*.{tsx,jsx,html}',
+    './layouts/**/*.{tsx,jsx,html}'
   ],
   
   // Output path for the generated CSS file
@@ -131,15 +154,31 @@ function createSampleConfig() {
 }
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
+    if (SENTRY_DSN)
+        Sentry.captureException(reason);
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     process.exit(1);
 });
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
+    if (SENTRY_DSN)
+        Sentry.captureException(error);
     console.error('Uncaught Exception:', error);
     process.exit(1);
 });
-main().catch(error => {
+// Ensure Sentry flushes before exit
+const flushSentryAndExit = async (code = 1) => {
+    if (SENTRY_DSN) {
+        try {
+            await Sentry.flush(2000); // Wait up to 2 seconds
+        }
+        catch (e) {
+            // Ignore flush errors
+        }
+    }
+    process.exit(code);
+};
+main().catch(async (error) => {
     console.error('❌ Fatal error:', error);
-    process.exit(1);
+    await flushSentryAndExit(1);
 });

@@ -8,7 +8,8 @@ export function loadConfig(configPath?: string): Config {
     output: './twmap.css',
     mode: 'hash',
     prefix: 'tw-',
-    ignore: ['node_modules/**', 'dist/**', 'build/**']
+    ignore: ['node_modules/**', 'dist/**', 'build/**'],
+    cssCompressor: false
   };
 
   if (!configPath) {

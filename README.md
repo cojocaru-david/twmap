@@ -1,11 +1,9 @@
 # Twmap - Tailwind Class Mapper
 
-**Author:** Cojocaru David  
-**Contact:** [contact@cojocarudavid.me](mailto:contact@cojocarudavid.me)  
-**Website:** [https://www.cojocarudavid.me/](https://www.cojocarudavid.me/)
+![Twmap Banner](https://i.imgur.com/B8BuqmD.png)
 
-[![npm version](https://img.shields.io/npm/v/twmap.svg)](https://www.npmjs.com/package/@cojocarudavid/twmap)
 [![GitHub stars](https://img.shields.io/github/stars/cojocaru-david/twmap.svg?style=social)](https://github.com/cojocaru-david/twmap)
+[![NPM Version](https://img.shields.io/npm/v/%40cojocarudavid%2Ftwmap)](https://www.npmjs.com/package/@cojocarudavid/twmap)
 
 A CLI tool that scans HTML, JSX, and TSX files to extract Tailwind utility classes and generates optimized CSS mappings with short class names.
 
@@ -32,12 +30,23 @@ npx twmap
 
 ## Quick Start
 
-1. **Initialize configuration** (optional):
+1. **Initialize configuration**:
    ```bash
    twmap --init
    ```
 
-2. **Run the tool**:
+2. **Edit the config file**:
+    ```javascript
+    // twmap.config.js
+    module.exports = {
+      input: ['./src/**/*.{tsx,jsx,html}'],
+      output: './twmap.css',
+      mode: 'hash',
+      prefix: 'tw-',
+    };
+    ```
+
+3. **Run the tool**:
    ```bash
    twmap
    ```
@@ -58,6 +67,10 @@ module.exports = {
   input: [
     './src/**/*.{tsx,jsx,html}',
     './components/**/*.{tsx,jsx}',
+    './pages/**/*.{tsx,jsx}',
+    './app/**/*.{tsx,jsx}',
+    './layouts/**/*.{tsx,jsx}',
+    './utils/**/*.{tsx,jsx}'
   ],
   
   // Output CSS file path
@@ -75,7 +88,8 @@ module.exports = {
     'dist/**',
     'build/**',
     '**/*.test.{js,ts,jsx,tsx}'
-  ]
+  ],
+  cssCompressor: true,
 };
 ```
 
@@ -204,6 +218,36 @@ npm run dev
 npm run dev -- --help
 ```
 
+## Testing
+
+Twmap uses **Jest** (with Bun) for automated testing. Tests cover parsing, class name generation, CSS generation, and the main processor logic.
+
+To run all tests:
+
+```bash
+npm test
+# or
+bun test
+```
+
+Test files are located in the `test/` directory and cover:
+- Config loading and validation
+- Class name generation (all modes)
+- CSS file generation
+- File parsing and replacement (HTML, JSX)
+- End-to-end processor runs (dry run and real mode)
+
+## Error Tracking & Logging
+
+Twmap integrates with **Sentry** for error and exception tracking. All major steps, warnings, and errors are reported to Sentry for observability. A simple logger utility is used throughout the codebase to:
+- Log info, warnings, and errors to the console
+- Send logs and breadcrumbs to Sentry
+
+## Performance Improvements
+
+- File parsing and updating are now parallelized for faster processing on large codebases.
+- Dry run mode provides a summary of all files that would be changed.
+
 ## License
 
 MIT License - see LICENSE file for details.
@@ -245,3 +289,29 @@ npm test
 - Check the examples in this README
 - Run `twmap --help` for CLI options
 - Create an issue on GitHub for bugs or feature requests
+
+## CSS Compression (Minification)
+
+You can enable CSS compression/minification for the generated CSS file by adding the following option to your `twmap.config.js`:
+
+```js
+module.exports = {
+  // ... other options ...
+  cssCompressor: true,
+};
+```
+
+When enabled, the output CSS will be minified using [cssnano](https://cssnano.co/).
+
+## Next.js Compatibility
+
+- `twmap` is compatible with Next.js projects (including Next.js 14+ and Tailwind CSS 4+).
+- It scans `.js`, `.jsx`, `.ts`, `.tsx`, and `.html` files by default.
+- You can run `twmap` as a build step or manually to generate your optimized CSS file.
+- Import the generated CSS file (e.g., `twmap.css`) in your Next.js app, typically in `pages/_app.js` or `app/layout.tsx`:
+
+```js
+import '../twmap.css';
+```
+
+- You can customize input/output paths and other options in `twmap.config.js`.

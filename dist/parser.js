@@ -42,6 +42,8 @@ const path = __importStar(require("path"));
 const parser_1 = require("@babel/parser");
 const traverse_1 = __importDefault(require("@babel/traverse"));
 const jsdom_1 = require("jsdom");
+const Sentry = __importStar(require("@sentry/node"));
+const SENTRY_DSN = process.env.SENTRY_DSN;
 class FileParser {
     constructor(dryRun = false) {
         this.tailwindClassRegex = /\b[a-z-]+(?:-[a-z0-9]+)*(?:\/[0-9]+)?\b/g;
@@ -64,12 +66,14 @@ class FileParser {
                 success: true
             };
         }
-        catch (error) {
+        catch (_error) {
+            if (SENTRY_DSN)
+                Sentry.captureException(_error);
             return {
                 filePath,
                 classNames: [],
                 success: false,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: _error instanceof Error ? _error.message : 'Unknown error'
             };
         }
     }
@@ -85,7 +89,9 @@ class FileParser {
                 }
             });
         }
-        catch (error) {
+        catch (_error) {
+            if (SENTRY_DSN)
+                Sentry.captureException(_error);
             // Fallback to regex parsing if DOM parsing fails
             const classMatches = content.match(/class\s*=\s*["']([^"']*)["']/g);
             if (classMatches) {
@@ -142,12 +148,20 @@ class FileParser {
                             else if (expression.type === 'StringLiteral') {
                                 classNames.push(expression.value);
                             }
+                            else {
+                                if (SENTRY_DSN)
+                                    Sentry.captureMessage(`[twmap] Skipping dynamic className in ${filePath} at line ${path.node.loc?.start.line || '?'}: cannot statically analyze.`, 'warning');
+                                // Warn about dynamic/complex expressions
+                                console.warn(`[twmap] Skipping dynamic className in ${filePath} at line ${path.node.loc?.start.line || '?'}: cannot statically analyze.`);
+                            }
                         }
                     }
                 }
             });
         }
-        catch (error) {
+        catch (_error) {
+            if (SENTRY_DSN)
+                Sentry.captureException(_error);
             // Fallback to regex parsing if AST parsing fails
             const classMatches = content.match(/(?:className|class)\s*=\s*(?:["']([^"']*)["']|{["']([^"']*)["']})/g);
             if (classMatches) {
@@ -191,40 +205,42 @@ class FileParser {
      * Handles errors gracefully.
      */
     replaceClassNamesInFile(filePath, replacements, dryRun = this.dryRun) {
-        const content = fs.readFileSync(filePath, 'utf-8');
-        let modifiedContent = content;
-        // Sort replacements by length (longest first) to avoid partial replacements
-        const sortedReplacements = Array.from(replacements.entries())
-            .sort((a, b) => b[0].length - a[0].length);
-        sortedReplacements.forEach(([original, replacement]) => {
-            // Escape special regex characters in the original class string
-            const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Replace in class attributes (HTML)
-            const htmlRegex = new RegExp(`(class\\s*=\\s*["'])([^"']*?)${escapedOriginal}([^"']*?)(["'])`, 'g');
-            modifiedContent = modifiedContent.replace(htmlRegex, (match, prefix, before, after, suffix) => {
-                const newClasses = `${before}${replacement}${after}`.replace(/\s+/g, ' ').trim();
-                return `${prefix}${newClasses}${suffix}`;
-            });
-            // Replace in className attributes (JSX)
-            const jsxRegex = new RegExp(`(className\\s*=\\s*["'])([^"']*?)${escapedOriginal}([^"']*?)(["'])`, 'g');
-            modifiedContent = modifiedContent.replace(jsxRegex, (match, prefix, before, after, suffix) => {
-                const newClasses = `${before}${replacement}${after}`.replace(/\s+/g, ' ').trim();
-                return `${prefix}${newClasses}${suffix}`;
-            });
-        });
-        if (dryRun) {
-            if (content !== modifiedContent) {
-                console.log(`[Dry Run] Would update: ${filePath}`);
-            }
-            return;
-        }
         try {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            let modifiedContent = content;
+            // Sort replacements by length (longest first) to avoid partial replacements
+            const sortedReplacements = Array.from(replacements.entries())
+                .sort((a, b) => b[0].length - a[0].length);
+            sortedReplacements.forEach(([original, replacement]) => {
+                // Escape special regex characters in the original class string
+                const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // Replace in class attributes (HTML)
+                const htmlRegex = new RegExp(`(class\\s*=\\s*["'])([^"']*?)${escapedOriginal}([^"']*?)(["'])`, 'g');
+                modifiedContent = modifiedContent.replace(htmlRegex, (match, prefix, before, after, suffix) => {
+                    const newClasses = `${before}${replacement}${after}`.replace(/\s+/g, ' ').trim();
+                    return `${prefix}${newClasses}${suffix}`;
+                });
+                // Replace in className attributes (JSX)
+                const jsxRegex = new RegExp(`(className\\s*=\\s*["'])([^"']*?)${escapedOriginal}([^"']*?)(["'])`, 'g');
+                modifiedContent = modifiedContent.replace(jsxRegex, (match, prefix, before, after, suffix) => {
+                    const newClasses = `${before}${replacement}${after}`.replace(/\s+/g, ' ').trim();
+                    return `${prefix}${newClasses}${suffix}`;
+                });
+            });
+            if (dryRun) {
+                if (content !== modifiedContent) {
+                    console.log(`[Dry Run] Would update: ${filePath}`);
+                }
+                return;
+            }
             if (content !== modifiedContent) {
                 fs.writeFileSync(filePath, modifiedContent, 'utf-8');
             }
         }
-        catch (err) {
-            console.error(`Error writing file ${filePath}:`, err);
+        catch (_error) {
+            if (SENTRY_DSN)
+                Sentry.captureException(_error);
+            console.error(`Error writing file ${filePath}:`, _error);
         }
     }
 }

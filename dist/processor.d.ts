@@ -9,9 +9,8 @@ export declare class TwmapProcessor {
     constructor(config: Config, dryRun?: boolean);
     process(): Promise<void>;
     private findFiles;
-    private parseFiles;
     private generateMappings;
-    private updateSourceFiles;
+    private updateSourceFile;
     private generateCSSFile;
     getMappings(): Map<string, string>;
     reset(): void;

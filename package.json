@@ -39,7 +39,7 @@
     "@babel/parser": "^7.27.5",
     "@babel/traverse": "^7.27.4",
     "@babel/types": "^7.27.6",
-    "@sentry/node": "^9.31.0",
+    "@sentry/node": "^9.32.0",
     "commander": "^14.0.0",
     "cssnano": "^7.0.7",
     "dotenv": "^16.5.0",

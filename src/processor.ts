@@ -1,29 +1,10 @@
-import { glob } from 'glob';
-import { Config, ClassMapping, ParseResult } from './types';
-import { FileParser } from './parser';
-import { ClassNameGenerator } from './generator';
-import { CSSGenerator } from './css-generator';
-import * as _path from 'path';
-import * as Sentry from '@sentry/node';
-const { logger } = Sentry;
-const SENTRY_DSN = process.env.SENTRY_DSN;
-
-
-// Simple logger utility
-const loggerConsole = {
-  info: (msg: string) => {
-    console.log(msg);
-  },
-  warn: (msg: string) => {
-    console.warn(msg);
-    if (SENTRY_DSN) Sentry.captureMessage(msg, 'warning');
-  },
-  error: (msg: string, err?: any) => {
-    console.error(msg, err);
-    if (SENTRY_DSN) Sentry.captureException(err || msg);
-    if (SENTRY_DSN) Sentry.captureMessage(msg, 'error');
-  }
-};
+import { glob } from "glob";
+import { Config, ClassMapping, ParseResult } from "./types";
+import { FileParser } from "./parser";
+import { ClassNameGenerator } from "./generator";
+import { CSSGenerator } from "./css-generator";
+import { sentry, logger } from "./sentry";
+import * as _path from "path";
 
 export class TwmapProcessor {
   private config: Config;
@@ -43,48 +24,166 @@ export class TwmapProcessor {
   }
 
   async process(): Promise<void> {
-    // Log analytics about the user environment
-    logger.info(`Analytics: platform=${process.platform}, arch=${process.arch}, node=${process.version}, cwd=${process.cwd()}`);
-    logger.info("Starting twmap process...", { config: [this.config] });
-     
-    loggerConsole.info('🔍 Scanning files...');
-    const files = await this.findFiles();
-    loggerConsole.info(`📁 Found ${files.length} files to process`);
+    const transaction = sentry.startTransaction("twmap.process", "processor");
 
-    loggerConsole.info('🎨 Parsing class names...');
-    const parseResults = await Promise.all(files.map(file => this.fileParser.parseFile(file)));
-    
-    const successfulParses = parseResults.filter(r => r.success);
-    const failedParses = parseResults.filter(r => !r.success);
+    try {
+      // Log analytics about the user environment and add to Sentry context
+      const analytics = {
+        platform: process.platform,
+        arch: process.arch,
+        nodeVersion: process.version,
+        cwd: process.cwd(),
+        config: {
+          mode: this.config.mode,
+          inputPatterns: this.config.input.length,
+          outputPath: this.config.output,
+          dryRun: this.dryRun,
+        },
+      };
 
-    if (failedParses.length > 0) {
-      loggerConsole.warn(`⚠️  Failed to parse ${failedParses.length} files:`);
-      logger.error(`Failed to parse ${failedParses.length} files:`, { files: failedParses.map(f => f.filePath) });
-      failedParses.forEach(result => {
-        logger.error(`Parse failed: ${result.filePath}: ${result.error}`, { filePath: result.filePath, error: result.error });
-        loggerConsole.warn(`Parse failed: ${result.filePath}: ${result.error}`);
+      transaction.setContext("analytics", analytics);
+      transaction.addBreadcrumb("Starting twmap process", "info", analytics);
+      logger.info("🔍 Scanning files...");
+
+      const startTime = Date.now();
+      const files = await this.findFiles();
+      const findFilesTime = Date.now() - startTime;
+
+      logger.performance("findFiles", findFilesTime, {
+        filesFound: files.length,
       });
+      logger.info(`📁 Found ${files.length} files to process`);
+
+      transaction.setData("files_found", files.length);
+      transaction.addBreadcrumb(`Found ${files.length} files`, "info", {
+        count: files.length,
+      });
+
+      logger.info("🎨 Parsing class names...");
+      const parseStartTime = Date.now();
+      const parseResults = await Promise.all(
+        files.map((file) => this.fileParser.parseFile(file)),
+      );
+      const parseTime = Date.now() - parseStartTime;
+
+      const successfulParses = parseResults.filter((r) => r.success);
+      const failedParses = parseResults.filter((r) => !r.success);
+
+      logger.performance("parseFiles", parseTime, {
+        totalFiles: files.length,
+        successful: successfulParses.length,
+        failed: failedParses.length,
+      });
+
+      transaction.setData("parse_results", {
+        total: parseResults.length,
+        successful: successfulParses.length,
+        failed: failedParses.length,
+      });
+
+      if (failedParses.length > 0) {
+        logger.warn(`⚠️  Failed to parse ${failedParses.length} files:`);
+
+        failedParses.forEach((result) => {
+          if (result.error) {
+            logger.error(
+              `Parse failed: ${result.filePath}: ${result.error}`,
+              undefined,
+              {
+                filePath: result.filePath,
+                error: result.error,
+              },
+            );
+          }
+        });
+      }
+
+      logger.info("🔄 Generating class mappings...");
+      const mappingStartTime = Date.now();
+      this.generateMappings(successfulParses);
+      const mappingTime = Date.now() - mappingStartTime;
+
+      logger.performance("generateMappings", mappingTime, {
+        mappingsGenerated: this.mappings.size,
+      });
+
+      transaction.setData("mappings_generated", this.mappings.size);
+
+      logger.info("📝 Updating source files...");
+      const updateStartTime = Date.now();
+      await Promise.all(
+        successfulParses.map((result) => this.updateSourceFile(result)),
+      );
+      const updateTime = Date.now() - updateStartTime;
+
+      logger.performance("updateSourceFiles", updateTime, {
+        filesUpdated: successfulParses.length,
+      });
+
+      logger.info("📦 Generating CSS file...");
+      const cssStartTime = Date.now();
+      await this.generateCSSFile();
+      const cssTime = Date.now() - cssStartTime;
+
+      logger.performance("generateCSS", cssTime);
+
+      const stats = this.cssGenerator.generateStats(
+        Array.from(this.mappings.entries()).map(([original, generated]) => ({
+          original,
+          generated,
+        })),
+      );
+      logger.info(stats);
+
+      if (this.dryRun) {
+        const changedFiles = successfulParses.filter(
+          (result) => result.classNames.length > 0,
+        );
+        logger.info(
+          `🔍 Dry run summary: ${changedFiles.length} files would be updated.`,
+        );
+        changedFiles.forEach((result) => logger.info(`  - ${result.filePath}`));
+      }
+
+      logger.info(
+        `✅ Process completed! CSS file generated at: ${this.config.output}`,
+      );
+
+      // Set success context for Sentry
+      const totalTime = Date.now() - startTime;
+      const processResult = {
+        success: true,
+        filesProcessed: files.length,
+        successfulParses: successfulParses.length,
+        failedParses: failedParses.length,
+        mappingsGenerated: this.mappings.size,
+        totalTime,
+        performance: {
+          findFiles: findFilesTime,
+          parseFiles: parseTime,
+          generateMappings: mappingTime,
+          updateFiles: updateTime,
+          generateCSS: cssTime,
+        },
+      };
+
+      transaction.setContext("process_result", processResult);
+      logger.performance("totalProcess", totalTime, processResult);
+    } catch (error) {
+      transaction.setTag("error", "true");
+      transaction.setData("error_details", {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      logger.error("Error during processing", error, {
+        stage: "process",
+        dryRun: this.dryRun,
+      });
+      throw error;
+    } finally {
+      transaction.finish();
     }
-
-    loggerConsole.info('🔄 Generating class mappings...');
-    this.generateMappings(successfulParses);
-
-    loggerConsole.info('📝 Updating source files...');
-    await Promise.all(successfulParses.map(result => this.updateSourceFile(result)));
-
-    loggerConsole.info('📦 Generating CSS file...');
-    await this.generateCSSFile();
-
-    const stats = this.cssGenerator.generateStats(Array.from(this.mappings.entries()).map(([original, generated]) => ({ original, generated })));
-    loggerConsole.info(stats);
-
-    if (this.dryRun) {
-      const changedFiles = successfulParses.filter(result => result.classNames.length > 0);
-      loggerConsole.info(`🔍 Dry run summary: ${changedFiles.length} files would be updated.`);
-      changedFiles.forEach(result => loggerConsole.info(`  - ${result.filePath}`));
-    }
-
-    loggerConsole.info(`✅ Process completed! CSS file generated at: ${this.config.output}`);
   }
 
   private async findFiles(): Promise<string[]> {
@@ -94,12 +193,14 @@ export class TwmapProcessor {
       try {
         const matches = await glob(pattern, {
           ignore: this.config.ignore,
-          absolute: true
+          absolute: true,
         });
-        
-        matches.forEach(file => allFiles.add(file));
+
+        matches.forEach((file) => allFiles.add(file));
       } catch (error) {
-        loggerConsole.warn(`Warning: Could not process glob pattern "${pattern}": ${error}`);
+        logger.warn(
+          `Warning: Could not process glob pattern "${pattern}": ${error}`,
+        );
       }
     }
 
@@ -110,39 +211,45 @@ export class TwmapProcessor {
     const allClassNames = new Set<string>();
 
     // Collect all unique class name combinations
-    parseResults.forEach(result => {
-      result.classNames.forEach(className => {
+    parseResults.forEach((result) => {
+      result.classNames.forEach((className) => {
         allClassNames.add(className);
       });
     });
 
     // Generate mappings for each unique class combination
-    allClassNames.forEach(className => {
+    allClassNames.forEach((className) => {
       if (!this.mappings.has(className)) {
         const generatedName = this.classGenerator.generateClassName(className);
         this.mappings.set(className, generatedName);
       }
     });
 
-    loggerConsole.info(`🎯 Generated ${this.mappings.size} unique class mappings`);
+    logger.info(`🎯 Generated ${this.mappings.size} unique class mappings`);
   }
 
   // Helper for parallel file updating
   private async updateSourceFile(result: ParseResult): Promise<void> {
     if (result.classNames.length > 0) {
       try {
-        this.fileParser.replaceClassNamesInFile(result.filePath, this.mappings, this.dryRun);
-        process.stdout.write(this.dryRun ? 'd' : '.');
+        this.fileParser.replaceClassNamesInFile(
+          result.filePath,
+          this.mappings,
+          this.dryRun,
+        );
+        process.stdout.write(this.dryRun ? "d" : ".");
       } catch (error) {
-        loggerConsole.error(`Failed to update file ${result.filePath}:`, error);
-        process.stdout.write('✗');
+        logger.error(`Failed to update file ${result.filePath}:`, error);
+        process.stdout.write("✗");
       }
     }
   }
 
   private async generateCSSFile(): Promise<void> {
     if (this.dryRun) {
-      loggerConsole.info(`Dry run: CSS file would be generated at ${this.config.output}`);
+      logger.info(
+        `Dry run: CSS file would be generated at ${this.config.output}`,
+      );
       return;
     }
     // Deduplicate mappings by normalized @apply value
@@ -151,15 +258,19 @@ export class TwmapProcessor {
       // Normalize the original class string (sort classes)
       const normalized = original
         .split(/\s+/)
-        .filter(cls => cls.trim().length > 0)
+        .filter((cls) => cls.trim().length > 0)
         .sort()
-        .join(' ');
+        .join(" ");
       if (!seenApply.has(normalized)) {
         seenApply.set(normalized, { original, generated });
       }
     }
     const classMappings: ClassMapping[] = Array.from(seenApply.values());
-    await this.cssGenerator.generateCSS(classMappings, this.config.output, this.config.cssCompressor);
+    await this.cssGenerator.generateCSS(
+      classMappings,
+      this.config.output,
+      this.config.cssCompressor,
+    );
   }
 
   getMappings(): Map<string, string> {

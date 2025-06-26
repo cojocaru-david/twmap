@@ -44,11 +44,11 @@ class ClassNameGenerator {
     generateClassName(originalClasses) {
         const cleanClasses = this.normalizeClasses(originalClasses);
         switch (this.config.mode) {
-            case 'hash':
+            case "hash":
                 return this.generateHashedName(cleanClasses);
-            case 'incremental':
+            case "incremental":
                 return this.generateIncrementalName();
-            case 'readable':
+            case "readable":
                 return this.generateReadableName(cleanClasses);
             default:
                 return this.generateHashedName(cleanClasses);
@@ -57,12 +57,12 @@ class ClassNameGenerator {
     normalizeClasses(classes) {
         return classes
             .split(/\s+/)
-            .filter(cls => cls.trim().length > 0)
+            .filter((cls) => cls.trim().length > 0)
             .sort()
-            .join(' ');
+            .join(" ");
     }
     generateHashedName(classes) {
-        const hash = crypto.createHash('md5').update(classes).digest('hex');
+        const hash = crypto.createHash("md5").update(classes).digest("hex");
         const shortHash = hash.substring(0, 6);
         const name = `${this.config.prefix}${shortHash}`;
         // Ensure uniqueness
@@ -83,9 +83,9 @@ class ClassNameGenerator {
     generateReadableName(classes) {
         const words = classes
             .split(/\s+/)
-            .map(cls => {
+            .map((cls) => {
             // Extract meaningful parts from Tailwind classes
-            const parts = cls.split('-');
+            const parts = cls.split("-");
             if (parts.length > 0) {
                 return parts[0];
             }
@@ -93,7 +93,7 @@ class ClassNameGenerator {
         })
             .filter((word, index, array) => array.indexOf(word) === index)
             .slice(0, 3);
-        let baseName = words.join('');
+        let baseName = words.join("");
         if (baseName.length > 10) {
             baseName = baseName.substring(0, 10);
         }

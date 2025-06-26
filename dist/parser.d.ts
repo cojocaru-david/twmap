@@ -1,4 +1,4 @@
-import { ParseResult } from './types';
+import { ParseResult } from "./types";
 export declare class FileParser {
     private tailwindClassRegex;
     private dryRun;

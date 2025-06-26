@@ -39,15 +39,15 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 function loadConfig(configPath) {
     const defaultConfig = {
-        input: ['./src/**/*.{tsx,jsx,html}'],
-        output: './twmap.css',
-        mode: 'hash',
-        prefix: 'tw-',
-        ignore: ['node_modules/**', 'dist/**', 'build/**'],
-        cssCompressor: false
+        input: ["./src/**/*.{tsx,jsx,html}"],
+        output: "./twmap.css",
+        mode: "hash",
+        prefix: "tw-",
+        ignore: ["node_modules/**", "dist/**", "build/**"],
+        cssCompressor: false,
     };
     if (!configPath) {
-        configPath = path.join(process.cwd(), 'twmap.config.js');
+        configPath = path.join(process.cwd(), "twmap.config.js");
     }
     if (!fs.existsSync(configPath)) {
         return defaultConfig;
@@ -58,7 +58,7 @@ function loadConfig(configPath) {
         const userConfig = require(configPath);
         return {
             ...defaultConfig,
-            ...userConfig
+            ...userConfig,
         };
     }
     catch (_error) {
@@ -70,13 +70,13 @@ function validateConfig(config) {
     if (!Array.isArray(config.input) || config.input.length === 0) {
         throw new Error('Config "input" must be a non-empty array of glob patterns');
     }
-    if (typeof config.output !== 'string' || !config.output.trim()) {
+    if (typeof config.output !== "string" || !config.output.trim()) {
         throw new Error('Config "output" must be a non-empty string');
     }
-    if (!['hash', 'incremental', 'readable'].includes(config.mode)) {
+    if (!["hash", "incremental", "readable"].includes(config.mode)) {
         throw new Error('Config "mode" must be one of: "hash", "incremental", "readable"');
     }
-    if (typeof config.prefix !== 'string') {
+    if (typeof config.prefix !== "string") {
         throw new Error('Config "prefix" must be a string');
     }
     if (!Array.isArray(config.ignore)) {

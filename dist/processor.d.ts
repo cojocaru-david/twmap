@@ -1,4 +1,4 @@
-import { Config } from './types';
+import { Config } from "./types";
 export declare class TwmapProcessor {
     private config;
     private fileParser;

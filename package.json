@@ -37,9 +37,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@babel/parser": "^7.27.5",
-    "@babel/traverse": "^7.27.4",
-    "@babel/types": "^7.27.6",
+    "@babel/parser": "^7.28.0",
+    "@babel/traverse": "^7.28.0",
+    "@babel/types": "^7.28.0",
     "@sentry/node": "^9.32.0",
     "commander": "^14.0.0",
     "cssnano": "^7.0.7",
